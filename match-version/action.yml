@@ -1,0 +1,49 @@
+name: match version
+
+inputs:
+  source:
+    required: true
+    description: "'binary' or 'browser_extension_manifest'"
+
+  filename:
+    required: false
+    description: "path to the binary, required when source is 'binary'"
+
+runs:
+  using: "composite"
+  steps:
+    - name: read version from source
+      run: |
+        if [ "${{ inputs.source }}" = "binary" ]; then
+          chmod +x "${{ inputs.filename }}"
+          version=$("${{ inputs.filename }}" --version)
+        elif [ "${{ inputs.source }}" = "browser_extension_manifest" ]; then
+          version=$(jq -r '.version' manifest.json)
+        else
+          echo "unknown source: ${{ inputs.source }}"
+          exit 1
+        fi
+        echo "SOURCE_VERSION=$version" >> $GITHUB_ENV
+      shell: bash
+
+    - name: match version against tag
+      run: |
+        tag_version="${GITHUB_REF_NAME#v}"
+
+        if ! [[ "$tag_version" =~ ^[0-9]+\.[0-9]+\.[0-9]+(-rc[0-9]+)?$ ]]; then
+          echo "tag version is not valid: $tag_version"
+          exit 1
+        fi
+
+        if [[ "${{ inputs.source }}" = "binary" ]]; then
+          if [[ "${{ env.SOURCE_VERSION }}" != *"$tag_version"* ]]; then
+            echo "binary version '${{ env.SOURCE_VERSION }}' does not contain tag version '$tag_version'"
+            exit 1
+          fi
+        else
+          if [[ "${{ env.SOURCE_VERSION }}" != "$tag_version" ]]; then
+            echo "manifest version '${{ env.SOURCE_VERSION }}' does not match tag version '$tag_version'"
+            exit 1
+          fi
+        fi
+      shell: bash
